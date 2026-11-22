@@ -278,18 +278,21 @@ async function loadCookies() {
     return;
   }
   currentUrl = tab.url;
+  let tabDomain = "";
   try {
-    currentDomain = new URL(tab.url).hostname;
+    tabDomain = new URL(tab.url).hostname;
   } catch {
-    currentDomain = "";
+    tabDomain = "";
   }
+  // A filter typed for one site shouldn't carry over to another
+  if (tabDomain !== currentDomain) cookieFilterEl.value = "";
+  currentDomain = tabDomain;
   cookieDomainEl.textContent = currentDomain;
 
   const cookies = await chrome.cookies.getAll({ url: tab.url });
   cookies.sort((a, b) => a.name.localeCompare(b.name));
   allCookies = cookies;
-  cookieCountEl.textContent = cookies.length;
-  renderCookies(cookies);
+  filterAndRenderCookies();
 }
 
 function renderCookies(cookies) {
@@ -297,7 +300,9 @@ function renderCookies(cookies) {
     cookieListEl.innerHTML = '<div class="empty">No cookies for this site</div>';
     return;
   }
-  cookieListEl.innerHTML = cookies.map((c, i) => `
+  // Rows carry their index in allCookies (not in the filtered list), because Delete and
+  // Save look the cookie up there.
+  cookieListEl.innerHTML = cookies.map((c) => [c, allCookies.indexOf(c)]).map(([c, i]) => `
     <div class="cookie-item" data-idx="${i}">
       <div class="cookie-row">
         <span class="cookie-chevron">&#9660;</span>
@@ -413,6 +418,47 @@ async function saveCookie(idx) {
 }
 
 // Delete All
+// ── Cookie filter (based on levelsio/superlevels#5 by mayerwin) ──
+const cookieFilterEl = document.getElementById("cookieFilter");
+const btnClearCookieFilter = document.getElementById("btnClearCookieFilter");
+const btnDeleteFiltered = document.getElementById("btnDeleteFiltered");
+
+function filteredCookies() {
+  const q = cookieFilterEl.value.trim().toLowerCase();
+  return q ? allCookies.filter((c) => c.name.toLowerCase().includes(q)) : allCookies;
+}
+
+function filterAndRenderCookies() {
+  const active = !!cookieFilterEl.value.trim();
+  const shown = filteredCookies();
+  btnClearCookieFilter.hidden = !cookieFilterEl.value;
+  document.getElementById("btnDeleteAll").hidden = active;
+  btnDeleteFiltered.hidden = !active;
+  cookieCountEl.textContent = active ? `${shown.length} of ${allCookies.length}` : allCookies.length;
+  if (active && !shown.length && allCookies.length) {
+    cookieListEl.innerHTML = '<div class="empty">No cookies match the filter</div>';
+    return;
+  }
+  renderCookies(shown);
+}
+
+cookieFilterEl.addEventListener("input", filterAndRenderCookies);
+btnClearCookieFilter.addEventListener("click", () => {
+  cookieFilterEl.value = "";
+  filterAndRenderCookies();
+  cookieFilterEl.focus();
+});
+btnDeleteFiltered.addEventListener("click", async () => {
+  const doomed = filteredCookies();
+  if (!cookieFilterEl.value.trim() || !doomed.length) return;
+  for (const c of doomed) {
+    const protocol = c.secure ? "https" : "http";
+    await chrome.cookies.remove({ url: `${protocol}://${c.domain.replace(/^\./, "")}${c.path}`, name: c.name });
+  }
+  cookieFilterEl.value = "";
+  loadCookies();
+});
+
 document.getElementById("btnDeleteAll").addEventListener("click", async () => {
   if (!allCookies.length) return;
   for (const c of allCookies) {
