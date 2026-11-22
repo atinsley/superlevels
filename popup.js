@@ -1,7 +1,11 @@
 // ═══════════════════════════════════
 //  Navigation
 // ═══════════════════════════════════
+let currentPage = "tabcleaner";
 function switchToPage(page) {
+  // Leaving a section: put its website list in alphabetical order for next time
+  if (currentPage !== page) sortSiteListFor(currentPage);
+  currentPage = page;
   document.querySelectorAll(".nav button").forEach((b) => b.classList.remove("active"));
   document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
   const btn = document.querySelector(`.nav button[data-page="${page}"]`);
@@ -82,6 +86,7 @@ requestAnimationFrame(() => {
       page = first ? first.dataset.page : "settings";
     }
     switchToPage(page);
+    sortAllSiteLists();
   });
 });
 
@@ -1259,7 +1264,7 @@ async function loadArchive() {
   archiveToggle.checked = enabled;
   updateArchiveUI(enabled);
   const sites = Array.isArray(data.archive_sites) ? data.archive_sites : ARCHIVE_DEFAULT_SITES;
-  archiveSites.value = sites.join("\n");
+  archiveSites.value = [...sites].sort(bySite((x) => x)).join("\n");
 }
 
 function updateArchiveUI(on) {
@@ -1274,15 +1279,20 @@ archiveToggle.addEventListener("change", () => {
 });
 
 let archiveSaveTimer;
+let archiveEdited = false;
 archiveSites.addEventListener("input", () => {
+  archiveEdited = true;
   clearTimeout(archiveSaveTimer);
   archiveSaveTimer = setTimeout(() => {
-    const sites = archiveSites.value.split("\n")
-      .map((s) => s.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, ""))
-      .filter(Boolean);
-    chrome.storage.local.set({ archive_sites: sites });
+    chrome.storage.local.set({ archive_sites: parseArchiveSites(archiveSites.value) });
   }, 300);
 });
+
+function parseArchiveSites(text) {
+  return text.split("\n")
+    .map((s) => s.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, ""))
+    .filter(Boolean);
+}
 
 // ═══════════════════════════════════
 //  X Reply Auto-Select
@@ -2437,6 +2447,73 @@ document.getElementById("shotPickBtn").addEventListener("click", async () => {
     if (chrome.extension.getViews({ type: "popup" }).includes(window)) window.close();
   } catch {}
 });
+
+// ═══════════════════════════════════
+//  Website lists: alphabetical order
+// ═══════════════════════════════════
+// New entries go at the end while you work; a list is sorted when you leave its section
+// (or click out of the No paywall box) and whenever the popup opens, so it's in order when
+// you come back. Case-insensitive, ignoring "www." and the tab cleaner's "exact:" marker.
+const siteSortKey = (h) => String(h).toLowerCase().replace(/^exact:/, "").replace(/^www\./, "");
+const bySite = (key) => (a, b) =>
+  siteSortKey(key(a)).localeCompare(siteSortKey(key(b)), undefined, { numeric: true });
+const sameOrder = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+async function sortStoredList(storageKey, key = (x) => x) {
+  const data = await chrome.storage.local.get([storageKey]);
+  const list = data[storageKey];
+  if (!Array.isArray(list) || list.length < 2) return null;
+  const sorted = [...list].sort(bySite(key));
+  if (sameOrder(list, sorted)) return null;
+  await chrome.storage.local.set({ [storageKey]: sorted });
+  return sorted;
+}
+
+const SITE_LIST_SORTERS = {
+  // No paywall: also tidies the text box (one site per line, no duplicates)
+  archive: async () => {
+    const data = await chrome.storage.local.get(["archive_sites"]);
+    const show = (list) => { if (document.activeElement !== archiveSites) archiveSites.value = list.join("\n"); };
+    // Never edited: the built-in list stays unsaved (so updates to it still arrive), just shown sorted
+    if (!archiveEdited && !Array.isArray(data.archive_sites)) {
+      if (currentPage === "archive" || archiveSites.value) show([...ARCHIVE_DEFAULT_SITES].sort(bySite((x) => x)));
+      return;
+    }
+    // Typed in this popup: the box wins (even if emptied); otherwise the saved list
+    clearTimeout(archiveSaveTimer);
+    const current = archiveEdited ? parseArchiveSites(archiveSites.value) : data.archive_sites;
+    const sorted = [...new Set(current)].sort(bySite((x) => x));
+    if (!Array.isArray(data.archive_sites) || !sameOrder(data.archive_sites, sorted)) {
+      await chrome.storage.local.set({ archive_sites: sorted });
+    }
+    archiveEdited = false;
+    if (archiveSites.value || currentPage === "archive") show(sorted);
+  },
+  tabcleaner: async () => {
+    const sorted = await sortStoredList("exclusions");
+    if (sorted) renderExclusionList(sorted);
+  },
+  focus: async () => {
+    const sorted = await sortStoredList("focus_sites", (s) => s.host);
+    if (sorted) renderFocusList(sorted);
+  },
+  nocookie: async () => {
+    const sorted = await sortStoredList("nocookie_exclusions");
+    if (sorted && currentPage === "nocookie") loadNoCookieSites();
+  },
+};
+
+function sortSiteListFor(page) {
+  const sorter = SITE_LIST_SORTERS[page];
+  if (sorter) sorter().catch(() => {});
+}
+
+function sortAllSiteLists() {
+  Object.keys(SITE_LIST_SORTERS).forEach(sortSiteListFor);
+}
+
+// Clicking out of the No paywall box sorts it straight away
+archiveSites.addEventListener("blur", () => sortSiteListFor("archive"));
 
 // ═══════════════════════════════════
 //  Helpers
