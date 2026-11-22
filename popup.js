@@ -626,7 +626,7 @@ document.getElementById("btnRedirectCopy").addEventListener("click", async () =>
 // ═══════════════════════════════════
 //  Dark Mode
 // ═══════════════════════════════════
-const darkToggle = document.getElementById("darkToggle");
+const darkModeButtons = document.querySelectorAll("#darkModePill button");
 const darkStatus = document.getElementById("darkStatus");
 const darkHostEl = document.getElementById("darkHost");
 const darkBrightness = document.getElementById("darkBrightness");
@@ -636,6 +636,8 @@ const scopeGlobal = document.getElementById("scopeGlobal");
 
 let darkHost = "";
 let darkScope = "site"; // "site" or "global"
+let darkMode = "off"; // "off" | "on" | "system" (Auto)
+const normalizeDarkMode = (v) => (v === true || v === "on" ? "on" : v === "system" ? "system" : "off");
 
 async function loadDarkMode() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -653,21 +655,24 @@ async function loadDarkMode() {
 
   const siteState = data[siteKey];
   const globalState = data.darkmode_global || false;
-  const enabled = siteState !== undefined ? siteState : globalState;
-
-  darkToggle.checked = enabled;
-  updateDarkStatus(enabled);
+  darkMode = normalizeDarkMode(siteState !== undefined ? siteState : globalState);
+  updateDarkStatus();
 }
 
-function updateDarkStatus(on) {
-  darkStatus.textContent = on ? "ON" : "OFF";
+function updateDarkStatus() {
+  darkModeButtons.forEach((b) => b.classList.toggle("active", b.dataset.mode === darkMode));
+  const systemIsDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const on = darkMode === "on" || (darkMode === "system" && systemIsDark);
+  darkStatus.textContent =
+    darkMode === "system" ? `AUTO · ${systemIsDark ? "dark" : "light"} now` : on ? "ON" : "OFF";
   darkStatus.className = "status " + (on ? "on" : "off");
 }
 
 async function applyDark() {
-  const enabled = darkToggle.checked;
   const brightness = parseInt(darkBrightness.value);
-  updateDarkStatus(enabled);
+  // Stored as before for on/off (true/false), "system" for Auto
+  const enabled = darkMode === "system" ? "system" : darkMode === "on";
+  updateDarkStatus();
 
   // Save preference
   if (darkScope === "global") {
@@ -694,13 +699,18 @@ async function applyDark() {
   if (tab) {
     chrome.tabs.sendMessage(tab.id, {
       type: "darkmode_toggle",
-      enabled,
+      mode: enabled,
       brightness,
     }).catch(() => {});
   }
 }
 
-darkToggle.addEventListener("change", applyDark);
+darkModeButtons.forEach((b) =>
+  b.addEventListener("click", () => {
+    darkMode = b.dataset.mode;
+    applyDark();
+  })
+);
 
 darkBrightness.addEventListener("input", () => {
   darkBrightnessVal.textContent = darkBrightness.value + "%";

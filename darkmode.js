@@ -114,41 +114,62 @@
   const globalKey = "darkmode_global";
   const pageDarkKey = "darkmode_pageIsDark_" + host;
 
-  // Load state as early as possible to prevent flash
-  chrome.storage.local.get(
-    [storageKey, globalKey, "darkmode_brightness", pageDarkKey],
-    (data) => {
-      const siteState = data[storageKey];
-      const globalState = data[globalKey];
-      const enabled =
-        siteState !== undefined ? siteState : globalState || false;
-      const brightness = data.darkmode_brightness || 100;
-      if (!enabled) return;
+  // A setting is true/"on", false/"off" or "system" (follow the OS light/dark appearance;
+  // based on levelsio/superlevels#5 by mayerwin). The site setting wins over the global one.
+  const systemDark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  const wantsDark = (mode) =>
+    mode === true || mode === "on" || (mode === "system" && !!systemDark && systemDark.matches);
+  let currentMode = false;
 
-      // Skip immediately if we've previously detected this site as natively dark
-      if (data[pageDarkKey]) return;
-
-      applyDarkMode(true, brightness);
-
-      // Re-verify once body styles are computed
-      const recheck = () => {
-        if (pageBgIsDark()) {
-          applyDarkMode(false, 0);
-          chrome.storage.local.set({ [pageDarkKey]: true });
-        }
-      };
-      if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", recheck, { once: true });
-      } else {
-        recheck();
+  // Turn dark mode on unless the page is dark by itself (cached per site)
+  function enableUnlessNativelyDark(brightness, knownDark) {
+    if (knownDark) return;
+    applyDarkMode(true, brightness);
+    const recheck = () => {
+      if (pageBgIsDark()) {
+        applyDarkMode(false, 0);
+        chrome.storage.local.set({ [pageDarkKey]: true });
       }
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", recheck, { once: true });
+    } else {
+      recheck();
     }
-  );
+  }
+
+  function evaluate() {
+    chrome.storage.local.get(
+      [storageKey, globalKey, "darkmode_brightness", pageDarkKey],
+      (data) => {
+        const siteState = data[storageKey];
+        currentMode = siteState !== undefined ? siteState : data[globalKey] || false;
+        if (!wantsDark(currentMode)) {
+          applyDarkMode(false, 0);
+          return;
+        }
+        enableUnlessNativelyDark(data.darkmode_brightness || 100, data[pageDarkKey]);
+      }
+    );
+  }
+
+  // Load state as early as possible to prevent flash
+  evaluate();
+
+  // "system": follow the OS switching between light and dark while the page is open
+  if (systemDark && systemDark.addEventListener) {
+    systemDark.addEventListener("change", () => {
+      if (currentMode === "system") evaluate();
+    });
+  }
 
   // Listen for toggle messages from popup
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === "darkmode_toggle") {
-      if (!msg.enabled) {
+      // Newer popups send the mode; older ones send enabled: true/false
+      if (msg.mode !== undefined) currentMode = msg.mode;
+      const enabled = msg.mode !== undefined ? wantsDark(msg.mode) : msg.enabled;
+      if (!enabled) {
         applyDarkMode(false, 0);
         chrome.storage.local.remove(pageDarkKey);
         sendResponse({ ok: true, skipped: false });

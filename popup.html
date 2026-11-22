@@ -465,6 +465,7 @@
       flex: 1; padding: 6px 8px; background: #0f1e3d; border: 1px solid #2a2a4a;
       border-radius: 4px; color: #ddd; font-size: 12px;
     }
+    .dark-mode-pill { width: 220px; margin: 6px auto 0; }
     .dark-scope {
       display: flex; gap: 6px; margin-bottom: 10px;
     }
@@ -994,10 +995,11 @@
     <div class="page-body">
       <div class="dark-big-toggle">
         <div class="moon">🌙</div>
-        <label class="big-switch">
-          <input type="checkbox" id="darkToggle">
-          <span class="big-slider"></span>
-        </label>
+        <div class="dark-scope dark-mode-pill" id="darkModePill">
+          <button data-mode="off" title="Never dark">Off</button>
+          <button data-mode="on" title="Always dark">On</button>
+          <button data-mode="system" title="Dark when your computer is in dark mode">Auto</button>
+        </div>
         <div class="status off" id="darkStatus">OFF</div>
       </div>
       <div class="dark-host" id="darkHost"></div>
