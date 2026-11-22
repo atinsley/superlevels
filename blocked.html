@@ -42,11 +42,6 @@
     <p>Get back to what matters.</p>
     <div class="hint">Open the SuperLevels popup → 🎯 Focus tab to toggle this site off or turn focus mode off.</div>
   </div>
-  <script>
-    const params = new URLSearchParams(location.search);
-    const host = params.get("host") || "this site";
-    document.getElementById("host").textContent = host;
-    document.title = "🎯 " + host + " is blocked";
-  </script>
+  <script src="blocked.js"></script>
 </body>
 </html>
