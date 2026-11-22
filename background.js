@@ -115,13 +115,12 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (tab.url) {
       try {
         const host = new URL(tab.url).hostname;
-        if (
-          exclusions.some(
-            (ex) => host === ex || host.endsWith("." + ex)
-          )
-        ) {
-          continue;
-        }
+        // "example.com" also covers its subdomains; "exact:example.com" covers only that host
+        // (subdomain switch based on levelsio/superlevels#5 by mayerwin)
+        const excluded = exclusions.some((ex) =>
+          ex.startsWith("exact:") ? host === ex.slice(6) : host === ex || host.endsWith("." + ex)
+        );
+        if (excluded) continue;
       } catch {}
     }
 

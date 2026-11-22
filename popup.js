@@ -80,7 +80,8 @@ function addHost() {
   host = host.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
   chrome.storage.local.get(["exclusions"], (data) => {
     const exclusions = data.exclusions || [];
-    if (exclusions.includes(host)) { hostInput.value = ""; return; }
+    // Already listed, with or without its subdomains
+    if (exclusions.some((ex) => ex.replace(/^exact:/, "") === host)) { hostInput.value = ""; return; }
     exclusions.push(host);
     chrome.storage.local.set({ exclusions }, () => {
       hostInput.value = "";
@@ -104,11 +105,32 @@ function renderExclusionList(exclusions) {
     listEl.innerHTML = '<div class="empty">No exclusions — all tabs can be closed</div>';
     return;
   }
+  // Each host has a "subdomains" switch: on = "example.com" (the default, as before),
+  // off = "exact:example.com" (based on levelsio/superlevels#5 by mayerwin)
   listEl.innerHTML = exclusions
-    .map((h) => `<div class="item"><span>${esc(h)}</span><button data-host="${escA(h)}">&times;</button></div>`)
+    .map((h) => {
+      const exact = h.startsWith("exact:");
+      const host = exact ? h.slice(6) : h;
+      return `<div class="item"><span class="exc-host" title="${escA(host)}">${esc(host)}</span>
+        <label class="exc-sub" title="Also keep subdomains like www.${escA(host)} open">
+          <input type="checkbox" data-sub="${escA(h)}"${exact ? "" : " checked"}> subdomains
+        </label>
+        <button data-host="${escA(h)}">&times;</button></div>`;
+    })
     .join("");
   listEl.querySelectorAll("button[data-host]").forEach((btn) => {
     btn.addEventListener("click", () => removeHost(btn.dataset.host));
+  });
+  listEl.querySelectorAll("input[data-sub]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const old = cb.dataset.sub;
+      const host = old.replace(/^exact:/, "");
+      const next = cb.checked ? host : "exact:" + host;
+      chrome.storage.local.get(["exclusions"], (data) => {
+        const list = (data.exclusions || []).map((ex) => (ex === old ? next : ex));
+        chrome.storage.local.set({ exclusions: list }, () => renderExclusionList(list));
+      });
+    });
   });
 }
 
