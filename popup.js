@@ -1506,6 +1506,7 @@ summarizeBtn.addEventListener("click", async () => {
   }
 
   summarizeBtn.disabled = true;
+  resetAiThread();
   showAiResult(`<span class="ai-spin">Reading page…</span>`);
 
   try {
@@ -1527,8 +1528,29 @@ summarizeBtn.addEventListener("click", async () => {
       `Summarize this web page. ${LENGTH_PROMPTS[aiLengthEl.value]}\n\n` +
       `Title: ${page.title}\nURL: ${page.url}\n\n${page.text}`;
 
-    const summary = await callAiProvider(provider, model, key, system, user);
+    // Show the summary as it is written (redrawn at most once per frame)
+    let pending = null;
+    const onDelta = (soFar) => {
+      if (pending === null) {
+        requestAnimationFrame(() => {
+          if (pending !== null) renderSummary(pending, true);
+          pending = null;
+        });
+      }
+      pending = soFar;
+    };
+    const summary = await callAiProvider(provider, model, key, system, user, onDelta);
+    pending = null;
     renderSummary(summary);
+    // Keep the conversation so follow-up questions can be asked about the same page
+    aiThread = {
+      provider, model, key,
+      messages: [
+        { role: "user", content: user },
+        { role: "assistant", content: summary },
+      ],
+    };
+    document.getElementById("aiAsk").classList.add("show");
     chrome.storage.local.set({ ai_length: aiLengthEl.value });
   } catch (err) {
     showAiResult(esc(err.message || "Something went wrong."), "err");
@@ -1538,7 +1560,7 @@ summarizeBtn.addEventListener("click", async () => {
 });
 
 // Talk to an Ollama server (local or on your network). `baseUrl` is the server address.
-async function callOllama(baseUrl, model, system, user) {
+async function callOllama(baseUrl, model, system, user, onDelta) {
   const base = normalizeOllamaUrl(baseUrl);
   const corsHelp =
     "Ollama blocked the request from this extension. Allow it by setting " +
@@ -1602,23 +1624,70 @@ async function callOllama(baseUrl, model, system, user) {
     ctx = await loadedCtx();
   }
 
-  const data = await post("/api/chat", {
+  const chat = {
     model,
-    stream: false,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
+    stream: !!onDelta,
+    messages: [{ role: "system", content: system }, ...toMessages(user)],
     options: { num_ctx: Math.max(ctx, MIN_CTX) },
-  });
-  const text = data.message?.content || "";
-  if (!text) throw new Error("Empty response from provider.");
+  };
+
+  let text = "";
+  if (!onDelta) {
+    text = (await post("/api/chat", chat)).message?.content || "";
+  } else {
+    // Streaming: Ollama sends one JSON object per line as the model writes
+    let res;
+    try {
+      res = await fetch(`${base}/api/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(chat),
+      });
+    } catch {
+      throw new Error(connectHelp);
+    }
+    if (res.status === 403) throw new Error(corsHelp);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(`Ollama: ${data?.error || `HTTP ${res.status}`}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffered = "";
+    const handle = (line) => {
+      if (!line.trim()) return;
+      const msg = JSON.parse(line);
+      if (msg.error) throw new Error(`Ollama: ${msg.error}`);
+      const piece = msg.message?.content || "";
+      if (piece) {
+        text += piece;
+        onDelta(text);
+      }
+    };
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffered += decoder.decode(value, { stream: true });
+      const lines = buffered.split("\n");
+      buffered = lines.pop();
+      lines.forEach(handle);
+    }
+    handle(buffered + decoder.decode());
+  }
+  if (!text.trim()) throw new Error("Empty response from provider.");
   return text.trim();
 }
 
-// Dispatch to the right provider API. Returns the summary text.
-async function callAiProvider(provider, model, key, system, user) {
-  if (provider === "ollama") return callOllama(key, model, system, user);
+// `user` is either one prompt string or a whole conversation: [{ role, content }, ...]
+function toMessages(user) {
+  return Array.isArray(user) ? user : [{ role: "user", content: user }];
+}
+
+// Dispatch to the right provider API. Returns the reply text. `user` is a prompt string or a
+// list of messages (see toMessages). `onDelta(textSoFar)` is called as text arrives for
+// providers that stream (currently Ollama).
+async function callAiProvider(provider, model, key, system, user, onDelta) {
+  if (provider === "ollama") return callOllama(key, model, system, user, onDelta);
 
   let url, headers, body, pick;
 
@@ -1635,7 +1704,7 @@ async function callAiProvider(provider, model, key, system, user) {
       model,
       max_tokens: 1024,
       system,
-      messages: [{ role: "user", content: user }],
+      messages: toMessages(user),
     };
     pick = (d) => (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
   } else {
@@ -1647,10 +1716,7 @@ async function callAiProvider(provider, model, key, system, user) {
     headers = { "content-type": "application/json", Authorization: `Bearer ${key}` };
     body = {
       model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
+      messages: [{ role: "system", content: system }, ...toMessages(user)],
     };
     pick = (d) => d.choices?.[0]?.message?.content || "";
   }
@@ -1666,8 +1732,91 @@ async function callAiProvider(provider, model, key, system, user) {
   return text.trim();
 }
 
-// Minimal safe markdown: escape, then **bold**, and '- ' bullet lists
-function renderSummary(text) {
+// ── Ask about this page ──
+// After a summary, questions go to the same provider with the page text, the summary and
+// earlier questions and answers, so follow-ups ("and the return window?") make sense.
+// The conversation lives only while the popup is open.
+const ASK_SYSTEM =
+  "You are a helpful assistant answering questions about a web page the user is reading. " +
+  "Answer from the page content. If the page doesn't contain the answer, say so plainly. " +
+  "Be concise. Use plain text with '- ' for bullet points.";
+let aiThread = null;
+const aiQuestionEl = document.getElementById("aiQuestion");
+const aiAskBtn = document.getElementById("aiAskBtn");
+const aiThreadEl = document.getElementById("aiThread");
+
+function resetAiThread() {
+  aiThread = null;
+  aiThreadEl.innerHTML = "";
+  aiQuestionEl.value = "";
+  document.getElementById("aiAsk").classList.remove("show");
+}
+
+async function askAboutPage() {
+  const question = aiQuestionEl.value.trim();
+  if (!question || !aiThread || aiAskBtn.disabled) return;
+  const { provider, model, key, messages } = aiThread;
+
+  const block = document.createElement("div");
+  block.className = "ai-result show";
+  block.innerHTML = `<div class="ai-q">${esc(question)}</div><div class="ai-a"><span class="ai-spin">Thinking…</span></div>`;
+  aiThreadEl.appendChild(block);
+  const answerEl = block.querySelector(".ai-a");
+  block.scrollIntoView({ block: "nearest" });
+  aiQuestionEl.value = "";
+  aiAskBtn.disabled = true;
+  aiQuestionEl.disabled = true;
+
+  const asked = [...messages, { role: "user", content: question }];
+  let pending = null;
+  const onDelta = (soFar) => {
+    if (pending === null) {
+      requestAnimationFrame(() => {
+        if (pending !== null) answerEl.innerHTML = mdToHtml(pending) + `<span class="ai-cursor">▍</span>`;
+        pending = null;
+      });
+    }
+    pending = soFar;
+  };
+  try {
+    const answer = await callAiProvider(provider, model, key, ASK_SYSTEM, asked, onDelta);
+    pending = null;
+    answerEl.innerHTML = mdToHtml(answer);
+    messages.push({ role: "user", content: question }, { role: "assistant", content: answer });
+  } catch (err) {
+    pending = null;
+    answerEl.innerHTML = `<span class="ai-err">${esc(err.message || "Something went wrong.")}</span>`;
+  } finally {
+    aiAskBtn.disabled = false;
+    aiQuestionEl.disabled = false;
+    aiQuestionEl.focus();
+  }
+}
+
+aiAskBtn.addEventListener("click", askAboutPage);
+aiQuestionEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") askAboutPage();
+});
+
+// Minimal safe markdown: escape, then **bold**, and '- ' bullet lists.
+// While `streaming`, the text is still arriving: no Copy button yet, and a cursor at the end.
+function renderSummary(text, streaming) {
+  const html = mdToHtml(text);
+  if (streaming) {
+    showAiResult(`${html}<span class="ai-cursor">▍</span>`);
+    return;
+  }
+  showAiResult(`<button class="ai-copy" id="aiCopyBtn">Copy</button>${html}`);
+  document.getElementById("aiCopyBtn").addEventListener("click", () => {
+    navigator.clipboard.writeText(text).then(() => {
+      const b = document.getElementById("aiCopyBtn");
+      b.textContent = "Copied!";
+      setTimeout(() => (b.textContent = "Copy"), 1500);
+    });
+  });
+}
+
+function mdToHtml(text) {
   const lines = text.split("\n");
   let html = "";
   let inList = false;
@@ -1683,14 +1832,7 @@ function renderSummary(text) {
     }
   }
   if (inList) html += "</ul>";
-  showAiResult(`<button class="ai-copy" id="aiCopyBtn">Copy</button>${html}`);
-  document.getElementById("aiCopyBtn").addEventListener("click", () => {
-    navigator.clipboard.writeText(text).then(() => {
-      const b = document.getElementById("aiCopyBtn");
-      b.textContent = "Copied!";
-      setTimeout(() => (b.textContent = "Copy"), 1500);
-    });
-  });
+  return html;
 }
 
 function fmtInline(s) {
