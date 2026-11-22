@@ -24,6 +24,7 @@
     button.primary { background: #e94560; border-color: #e94560; color: #fff; }
     button:disabled { opacity: 0.4; cursor: default; }
     #preview { padding: 16px; text-align: center; }
+    #plStatus a { color: #4caf50; }
     #preview img { max-width: 100%; box-shadow: 0 2px 16px rgba(0,0,0,0.5); background: #fff; }
     #preview iframe { width: 100%; height: calc(100vh - 100px); border: 0; background: #fff; }
   </style>
@@ -34,11 +35,14 @@
       <div id="title">Full-page screenshot</div>
       <div id="meta"></div>
       <div id="status" class="status">Starting…</div>
+      <div id="plStatus" class="status"></div>
     </div>
+    <button id="paperlessBtn" hidden disabled title="Upload to your Paperless-ngx">Send to Paperless</button>
     <button id="copyBtn" disabled>Copy image</button>
     <button id="saveBtn" class="primary" disabled>Save PNG</button>
   </div>
   <div id="preview"></div>
+  <script src="paperless.js"></script>
   <script src="screenshot.js"></script>
 </body>
 </html>
