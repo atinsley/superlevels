@@ -50,5 +50,6 @@ Without those, the Ollama provider code is still tested against a fake server.
 | `json_test.cjs` | JSON formatter search: highlights, opening collapsed blocks, next/previous, escaping |
 | `dark_test.cjs` | Dark mode Off / On / Auto, following the system appearance live, already-dark pages |
 | `settings_test.cjs` | The Settings tab: hiding and reordering tabs, drag and drop, persistence |
+| `sort_test.cjs` | Website lists (No paywall, Tabs, Focus, Cookies=OK) put in alphabetical order when you leave them or reopen the popup |
 
 Most suites serve their own test pages from a local server. A few also load real sites (Wikipedia, sonos.com, example.com, x.com, reddit.com), so they need internet access.

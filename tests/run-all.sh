@@ -45,6 +45,7 @@ run cookie-dismisser-sites node nocookie_test.cjs "$EXT" "$OUT/nocookie"
 run json-search            node json_test.cjs "$EXT" "$OUT/json"
 run dark-mode              node dark_test.cjs "$EXT" "$OUT/dark"
 run settings               node settings_test.cjs "$EXT" "$OUT/settings"
+run sorted-site-lists      node sort_test.cjs "$EXT" "$OUT/sort"
 
 [ $failed -eq 0 ] && echo "all passed" || echo "some suites FAILED"
 exit $failed
