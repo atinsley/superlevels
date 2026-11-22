@@ -177,6 +177,16 @@
         cursor: pointer;
         transition: background 0.15s, color 0.15s;
       }
+      .sl-jf-search {
+        padding: 5px 10px; background: #16213e; color: #fff; border: 1px solid #2a2a4a;
+        border-radius: 5px; font-size: 11px; font-family: -apple-system, sans-serif;
+        outline: none; width: 140px; transition: width 0.2s, border-color 0.2s;
+      }
+      .sl-jf-search::placeholder { color: #666; }
+      .sl-jf-search:focus { width: 200px; border-color: #e94560; }
+      .sl-jf-count { color: #888; font: 11px -apple-system, sans-serif; align-self: center; min-width: 60px; }
+      mark.sl-jf-hit { background: #e94560; color: #fff; padding: 0 2px; border-radius: 2px; }
+      mark.sl-jf-hit.sl-jf-current { background: #ffb020; color: #000; }
       .sl-jf-toolbar button:hover {
         background: #1b2a4a;
         color: #fff;
@@ -226,6 +236,77 @@
       collapseBtn.textContent = shouldCollapse ? "Expand All" : "Collapse All";
     });
 
+    // Search (based on levelsio/superlevels#5 by mayerwin): highlights matching keys and
+    // values, opens collapsed blocks that contain a match, Enter / Shift+Enter jump between hits
+    const searchInput = document.createElement("input");
+    searchInput.type = "search";
+    searchInput.placeholder = "Search…";
+    searchInput.className = "sl-jf-search";
+    const countEl = document.createElement("span");
+    countEl.className = "sl-jf-count";
+    let hits = [];
+    let current = -1;
+
+    const focusHit = (i) => {
+      if (!hits.length) return;
+      if (current >= 0) hits[current].classList.remove("sl-jf-current");
+      current = (i + hits.length) % hits.length;
+      hits[current].classList.add("sl-jf-current");
+      hits[current].scrollIntoView({ block: "center" });
+      countEl.textContent = `${current + 1} of ${hits.length}`;
+    };
+
+    const runSearch = () => {
+      const query = searchInput.value.toLowerCase();
+      const targets = document.querySelectorAll(".sl-jf-key, .sl-jf-string, .sl-jf-number, .sl-jf-bool, .sl-jf-null");
+      targets.forEach((el) => {
+        const orig = el.getAttribute("data-orig");
+        if (orig !== null) {
+          el.innerHTML = orig;
+          el.removeAttribute("data-orig");
+        }
+      });
+      hits = [];
+      current = -1;
+      countEl.textContent = "";
+      if (!query) return;
+
+      const pattern = new RegExp(`(${query.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")})`, "gi");
+      targets.forEach((el) => {
+        const text = el.textContent;
+        if (!text.toLowerCase().includes(query)) return;
+        el.setAttribute("data-orig", el.innerHTML);
+        // Split the raw text on matches, then escape each piece (matching after escaping
+        // would hit inside entities like &amp; and miss queries containing < or &)
+        el.innerHTML = text.split(pattern)
+          .map((part, i) => (i % 2 ? `<mark class="sl-jf-hit">${escHtml(part)}</mark>` : escHtml(part)))
+          .join("");
+        // Open every collapsed block around the match
+        for (let p = el.parentElement; p; p = p.parentElement) {
+          if (!p.classList.contains("sl-jf-collapsible")) continue;
+          const toggle = p.previousElementSibling;
+          const ellipsis = p.nextElementSibling;
+          if (toggle && toggle.dataset.collapsed === "true") {
+            toggle.dataset.collapsed = "false";
+            p.style.display = "";
+            if (ellipsis) ellipsis.style.display = "none";
+          }
+        }
+      });
+      hits = [...document.querySelectorAll("mark.sl-jf-hit")];
+      if (hits.length) focusHit(0);
+      else countEl.textContent = "No matches";
+    };
+    searchInput.addEventListener("input", runSearch);
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        focusHit(current + (e.shiftKey ? -1 : 1));
+      }
+    });
+
+    toolbar.appendChild(searchInput);
+    toolbar.appendChild(countEl);
     toolbar.appendChild(copyBtn);
     toolbar.appendChild(collapseBtn);
     toolbar.appendChild(rawBtn);
