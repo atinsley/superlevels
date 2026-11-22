@@ -1,0 +1,11 @@
+{
+  "name": "superlevels-tests",
+  "private": true,
+  "description": "Browser tests for the SuperLevels extension (see README.md)",
+  "scripts": {
+    "test": "./run-all.sh"
+  },
+  "devDependencies": {
+    "playwright": "1.64.1"
+  }
+}
