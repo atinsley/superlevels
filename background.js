@@ -179,25 +179,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "pip") {
     chrome.scripting.executeScript({
-      target: { tabId: msg.tabId },
+      target: { tabId: msg.tabId, allFrames: true },
       func: () => {
         if (document.pictureInPictureElement) {
           document.exitPictureInPicture();
           return { action: "exited" };
         }
-        const videos = Array.from(document.querySelectorAll("video"));
+        // Walk shadow roots too
+        const collect = (root) => {
+          const out = Array.from(root.querySelectorAll("video"));
+          root.querySelectorAll("*").forEach((el) => {
+            if (el.shadowRoot) out.push(...collect(el.shadowRoot));
+          });
+          return out;
+        };
+        const videos = collect(document);
         if (!videos.length) return { error: "No video found on this page" };
         const playing = videos.filter(v => !v.paused && !v.ended);
-        let video;
-        if (playing.length) {
-          video = playing.reduce((a, b) =>
-            (b.videoWidth * b.videoHeight) > (a.videoWidth * a.videoHeight) ? b : a
-          );
-        } else {
-          video = videos.reduce((a, b) =>
-            (b.videoWidth * b.videoHeight) > (a.videoWidth * a.videoHeight) ? b : a
-          );
-        }
+        const pool = playing.length ? playing : videos;
+        const video = pool.reduce((a, b) =>
+          (b.videoWidth * b.videoHeight) > (a.videoWidth * a.videoHeight) ? b : a
+        );
         const enterPip = () => video.requestPictureInPicture()
           .then(() => ({ action: "entered" }))
           .catch(e => ({ error: e.message }));
@@ -232,7 +234,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return enterPip();
       },
     }).then(results => {
-      sendResponse(results[0]?.result || { error: "No result" });
+      // pick the frame that found a video
+      const hit = results.find(r => r.result && !r.result.error) || results[0];
+      sendResponse(hit?.result || { error: "No result" });
     }).catch(err => {
       sendResponse({ error: err.message });
     });
