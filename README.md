@@ -75,6 +75,10 @@ Pop the largest video on the current tab into a floating PiP window with one cli
 ### 📸 Full-page Screenshot
 Capture the whole page, top to bottom, in one clean PNG. It's handy for saving articles and receipts. It scrolls through the page first so lazy-loaded images show up, then captures through Chrome's debugger, so fixed headers appear once instead of on every screen. Opens a preview with Save and Copy buttons and saves it to your Downloads. Can also save as a PDF with selectable text.
 
+**Send to Paperless:** set your Paperless-ngx URL and API token under ⚙️ Paperless in the Screenshot tab, and the preview gets a "Send to Paperless" button that uploads the PNG or PDF (titled with the page title) and links to the new document once Paperless has processed it.
+
+**Pick an element:** capture just one part of a page, such as an order summary. Hover to highlight, ↑/↓ for a bigger or smaller element, click to capture, Esc to cancel.
+
 ### 🗺 Google Maps Links
 Re-adds clickable Maps links and map preview cards to Google Search results.
 

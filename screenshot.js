@@ -330,6 +330,7 @@ async function capture() {
     document.title = "📸 " + fileName;
     saveBtn.disabled = false;
     copyBtn.disabled = false;
+    paperlessBtn.disabled = false;
     save();
     setStatus(`Saved to your Downloads as “${fileName}”`, "ok");
   } catch (e) {
@@ -340,6 +341,48 @@ async function capture() {
 })();
 
 saveBtn.addEventListener("click", save);
+
+// ── Send to Paperless ──
+const paperlessBtn = document.getElementById("paperlessBtn");
+const plStatusEl = document.getElementById("plStatus");
+let paperlessCfg = null;
+Paperless.config().then((cfg) => {
+  paperlessCfg = cfg;
+  paperlessBtn.hidden = !cfg;
+});
+
+function setPlStatus(html, cls) {
+  plStatusEl.innerHTML = html;
+  plStatusEl.className = "status" + (cls ? " " + cls : "");
+}
+
+paperlessBtn.addEventListener("click", async () => {
+  if (!blob || !paperlessCfg) return;
+  paperlessBtn.disabled = true;
+  const title = (titleEl.textContent || "").trim();
+  try {
+    setPlStatus("Sending to Paperless…");
+    const taskId = await Paperless.upload(paperlessCfg, blob, fileName, title);
+    setPlStatus("Sent. Paperless is processing it…");
+    const result = await Paperless.waitForTask(paperlessCfg, taskId, {
+      onStatus: (s) => s === "STARTED" && setPlStatus("Paperless is reading it…"),
+    });
+    if (result.pending) {
+      setPlStatus("Sent. Paperless is still processing it; it will show up in Paperless when done.", "ok");
+    } else if (result.docId) {
+      const url = Paperless.docUrl(paperlessCfg, result.docId);
+      setPlStatus(`Added to Paperless · <a href="${url}" target="_blank" rel="noopener">open document #${Number(result.docId)}</a>`, "ok");
+    } else {
+      setPlStatus("Added to Paperless.", "ok");
+    }
+    paperlessBtn.textContent = "Sent to Paperless ✓";
+  } catch (e) {
+    const d = document.createElement("div");
+    d.textContent = e.message || String(e);
+    setPlStatus(d.innerHTML, "err");
+    paperlessBtn.disabled = false;
+  }
+});
 copyBtn.addEventListener("click", async () => {
   try {
     await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);

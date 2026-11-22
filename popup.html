@@ -1386,6 +1386,20 @@
         for a moment while it works. Opens a preview and saves it.<br>
         Pick an element: hover, ↑/↓ for bigger or smaller, click. Esc cancels.
       </div>
+
+      <button id="plSettingsBtn" style="background:none;border:none;color:#555;font-size:12px;cursor:pointer;margin-top:10px;">⚙️ Paperless</button>
+      <div class="dark-section" id="plConfig" style="margin-top:8px;display:none">
+        <label>Paperless URL</label>
+        <input type="text" id="plUrl" placeholder="https://paperless.example.com" style="width:100%;padding:6px 8px;background:#0f1e3d;border:1px solid #2a2a4a;border-radius:4px;color:#ddd;font-size:12px;margin-bottom:6px;">
+        <label>API token <span style="color:#555;">(Paperless → My Profile → API Auth Token)</span></label>
+        <input type="password" id="plToken" placeholder="paste your token" style="width:100%;padding:6px 8px;background:#0f1e3d;border:1px solid #2a2a4a;border-radius:4px;color:#ddd;font-size:12px;margin-bottom:6px;">
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="btn-save" id="plSaveBtn" style="padding:6px 14px;font-size:12px;">Save &amp; test</button>
+          <button id="plClearBtn" style="background:none;border:none;color:#888;font-size:12px;cursor:pointer;">Remove</button>
+        </div>
+        <div class="pip-status" id="plTestStatus" style="text-align:left;margin-top:6px;"></div>
+        <div style="font-size:11px;color:#555;margin-top:6px;">Adds a "Send to Paperless" button to the screenshot preview. The token is stored only in this browser.</div>
+      </div>
     </div>
   </div>
 
@@ -1441,6 +1455,7 @@
     </div>
   </div>
 
+  <script src="paperless.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

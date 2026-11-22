@@ -1974,6 +1974,49 @@ async function startFullPageShot(kind) {
 document.getElementById("shotPngBtn").addEventListener("click", () => startFullPageShot("png"));
 document.getElementById("shotPdfBtn").addEventListener("click", () => startFullPageShot("pdf"));
 
+// Paperless settings (used by the Send to Paperless button in the screenshot preview)
+const plConfigEl = document.getElementById("plConfig");
+const plUrlEl = document.getElementById("plUrl");
+const plTokenEl = document.getElementById("plToken");
+const plTestStatusEl = document.getElementById("plTestStatus");
+chrome.storage.local.get(["paperless_url", "paperless_token"], (d) => {
+  plUrlEl.value = d.paperless_url || "";
+  plTokenEl.value = d.paperless_token || "";
+  if (d.paperless_url) document.getElementById("plSettingsBtn").textContent = "⚙️ Paperless (connected)";
+});
+document.getElementById("plSettingsBtn").addEventListener("click", () => {
+  plConfigEl.style.display = plConfigEl.style.display === "none" ? "block" : "none";
+});
+document.getElementById("plSaveBtn").addEventListener("click", async () => {
+  const cfg = { url: Paperless.normalizeUrl(plUrlEl.value), token: plTokenEl.value.trim() };
+  plTestStatusEl.className = "pip-status";
+  if (!cfg.url || !cfg.token) {
+    plTestStatusEl.className = "pip-status err";
+    plTestStatusEl.textContent = "Enter the Paperless URL and an API token.";
+    return;
+  }
+  plUrlEl.value = cfg.url;
+  plTestStatusEl.textContent = "Testing…";
+  try {
+    const count = await Paperless.test(cfg);
+    await chrome.storage.local.set({ paperless_url: cfg.url, paperless_token: cfg.token });
+    plTestStatusEl.className = "pip-status ok";
+    plTestStatusEl.textContent = `Connected · ${count} documents in Paperless. Saved.`;
+    document.getElementById("plSettingsBtn").textContent = "⚙️ Paperless (connected)";
+  } catch (e) {
+    plTestStatusEl.className = "pip-status err";
+    plTestStatusEl.textContent = `${e.message} Not saved.`;
+  }
+});
+document.getElementById("plClearBtn").addEventListener("click", async () => {
+  await chrome.storage.local.remove(["paperless_url", "paperless_token"]);
+  plUrlEl.value = "";
+  plTokenEl.value = "";
+  plTestStatusEl.className = "pip-status";
+  plTestStatusEl.textContent = "Removed.";
+  document.getElementById("plSettingsBtn").textContent = "⚙️ Paperless";
+});
+
 // Element capture: a picker runs in the page; clicking an element marks it and asks the
 // background to open the preview in element mode (the popup has closed by then).
 function elementPicker() {
