@@ -27,6 +27,7 @@ function switchToPage(page) {
     else if (page === "jsonformat") loadJsonFormat();
     else if (page === "summarize") loadSummarize();
     else if (page === "music") { loadMusicHistory(); loadAcrFields(); }
+    else if (page === "settings") loadSettings();
   };
   if (typeof requestAnimationFrame === "function") requestAnimationFrame(load);
   else setTimeout(load, 0);
@@ -42,11 +43,123 @@ document.querySelectorAll(".nav button").forEach((btn) => {
   });
 });
 
-// Restore last open tab — deferred so the default page paints first
-requestAnimationFrame(() => {
-  chrome.storage.local.get(["last_tab"], (data) => {
-    if (data.last_tab) switchToPage(data.last_tab);
+// ── Menu order and hidden tabs (Settings tab; based on levelsio/superlevels#5 by mayerwin) ──
+// The list is read from the nav itself, so new tabs show up in Settings automatically.
+const navEl = document.querySelector(".nav");
+const navButton = (id) => navEl.querySelector(`button[data-page="${id}"]`);
+const NAV_DEFAULT = [...navEl.querySelectorAll("button[data-page]")]
+  .map((b) => b.dataset.page)
+  .filter((id) => id !== "settings");
+
+// Saved order, minus tabs that no longer exist, plus new tabs after their usual neighbour
+function navOrder(saved) {
+  const out = [...new Set((saved || []).filter((id) => NAV_DEFAULT.includes(id)))];
+  NAV_DEFAULT.forEach((id, i) => {
+    if (out.includes(id)) return;
+    const prev = NAV_DEFAULT.slice(0, i).reverse().find((p) => out.includes(p));
+    out.splice(prev ? out.indexOf(prev) + 1 : 0, 0, id);
   });
+  return out;
+}
+
+function applyNavSettings(order, hidden) {
+  const settingsBtn = navButton("settings");
+  navOrder(order).forEach((id) => {
+    const b = navButton(id);
+    navEl.insertBefore(b, settingsBtn);
+    b.hidden = (hidden || []).includes(id);
+  });
+}
+
+// Restore order, hidden tabs and the last open tab — deferred so the default page paints first
+requestAnimationFrame(() => {
+  chrome.storage.local.get(["last_tab", "nav_order", "nav_hidden"], (data) => {
+    applyNavSettings(data.nav_order, data.nav_hidden);
+    let page = data.last_tab || "tabcleaner";
+    const btn = navButton(page);
+    if (!btn || btn.hidden) {
+      const first = [...navEl.querySelectorAll("button[data-page]")].find((b) => !b.hidden);
+      page = first ? first.dataset.page : "settings";
+    }
+    switchToPage(page);
+  });
+});
+
+async function saveNavSettings(changes) {
+  await chrome.storage.local.set(changes);
+  const data = await chrome.storage.local.get(["nav_order", "nav_hidden"]);
+  applyNavSettings(data.nav_order, data.nav_hidden);
+  loadSettings();
+}
+
+async function loadSettings() {
+  const data = await chrome.storage.local.get(["nav_order", "nav_hidden"]);
+  const order = navOrder(data.nav_order);
+  const hidden = data.nav_hidden || [];
+  const listEl = document.getElementById("settingsList");
+  listEl.innerHTML = order
+    .map((id, i) => {
+      const shown = !hidden.includes(id);
+      const label = navButton(id).textContent.trim();
+      return `<div class="set-row${shown ? "" : " hidden-tab"}" draggable="true" data-id="${escA(id)}">
+        <span class="grip" title="Drag to reorder">⋮⋮</span>
+        <span class="set-label">${esc(label)}</span>
+        <button class="set-move" data-move="-1" title="Move up"${i === 0 ? " disabled" : ""}>↑</button>
+        <button class="set-move" data-move="1" title="Move down"${i === order.length - 1 ? " disabled" : ""}>↓</button>
+        <label class="switch-sm" title="${shown ? "Shown in the menu" : "Hidden from the menu"}">
+          <input type="checkbox" data-show${shown ? " checked" : ""}>
+          <span class="slider-sm"></span>
+        </label>
+      </div>`;
+    })
+    .join("");
+  document.getElementById("settingsCount").textContent =
+    `${order.length - order.filter((id) => hidden.includes(id)).length} of ${order.length} tabs in the menu`;
+
+  const move = (id, to) => {
+    const next = order.filter((x) => x !== id);
+    next.splice(Math.max(0, Math.min(next.length, to)), 0, id);
+    saveNavSettings({ nav_order: next });
+  };
+  listEl.querySelectorAll(".set-row").forEach((row) => {
+    const id = row.dataset.id;
+    row.querySelector("input[data-show]").addEventListener("change", (e) => {
+      const next = e.target.checked ? hidden.filter((x) => x !== id) : [...hidden, id];
+      saveNavSettings({ nav_hidden: next });
+    });
+    row.querySelectorAll("button[data-move]").forEach((b) =>
+      b.addEventListener("click", () => move(id, order.indexOf(id) + Number(b.dataset.move)))
+    );
+    // Drag and drop: drop above or below a row depending on which half you are over
+    row.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/plain", id);
+      e.dataTransfer.effectAllowed = "move";
+      row.classList.add("dragging");
+    });
+    row.addEventListener("dragend", () => row.classList.remove("dragging"));
+    row.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      const after = e.offsetY > row.offsetHeight / 2;
+      row.classList.toggle("drop-after", after);
+      row.classList.toggle("drop-before", !after);
+    });
+    row.addEventListener("dragleave", () => row.classList.remove("drop-before", "drop-after"));
+    row.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const dragged = e.dataTransfer.getData("text/plain");
+      const after = row.classList.contains("drop-after");
+      row.classList.remove("drop-before", "drop-after");
+      if (!dragged || dragged === id) return;
+      const rest = order.filter((x) => x !== dragged);
+      move(dragged, rest.indexOf(id) + (after ? 1 : 0));
+    });
+  });
+}
+
+document.getElementById("settingsShowAll").addEventListener("click", () => saveNavSettings({ nav_hidden: [] }));
+document.getElementById("settingsReset").addEventListener("click", async () => {
+  await chrome.storage.local.remove("nav_order");
+  saveNavSettings({});
 });
 
 // ═══════════════════════════════════
