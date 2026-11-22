@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
     body {
       width: 600px;
       height: 600px;
@@ -1234,9 +1235,19 @@
         OneTrust, CookieBot, Didomi, Quantcast, GDPR plugins, and more.
       </div>
 
+      <div class="dark-section" id="nocookieSite" style="margin-top:10px">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="flex:1;min-width:0;font-size:12px;color:#aaa;">This site: <b id="nocookieHost" style="color:#fff;word-break:break-all;"></b></div>
+          <button class="btn-save" id="nocookieExcludeBtn" style="padding:6px 10px;font-size:11px;white-space:nowrap;">Don't dismiss here</button>
+        </div>
+        <div id="nocookieSiteNote" style="font-size:11px;color:#666;margin-top:6px;"></div>
+      </div>
+      <h2 id="nocookieExclHeader" style="margin-top:12px" hidden>Switched off on</h2>
+      <div class="exc-list" id="nocookieExclList"></div>
+
       <div class="xdim-note">
         Works on most sites automatically.<br>
-        Toggle off if a site breaks.
+        If one site breaks, switch it off just there.
       </div>
     </div>
   </div>

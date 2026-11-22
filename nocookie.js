@@ -155,16 +155,24 @@
     setTimeout(tryClick, 5000);
   }
 
-  // Check storage and apply
-  chrome.storage.local.get(["nocookie_enabled"], (data) => {
-    if (data.nocookie_enabled !== false) activate();
-  });
+  // Sites where it's switched off ("Don't dismiss on this site" in the popup). An entry like
+  // "example.com" also covers www. and other subdomains. (Based on levelsio/superlevels#5 by mayerwin.)
+  function isExcluded(exclusions) {
+    const host = location.hostname;
+    return (exclusions || []).some((ex) => host === ex || host.endsWith("." + ex));
+  }
 
-  // Listen for toggle from popup
+  // Check storage and apply
+  function checkAndActivate() {
+    chrome.storage.local.get(["nocookie_enabled", "nocookie_exclusions"], (data) => {
+      if (data.nocookie_enabled === false || isExcluded(data.nocookie_exclusions)) removeCSS();
+      else activate();
+    });
+  }
+  checkAndActivate();
+
+  // Popup changed the switch or the site list
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === "nocookie_toggle") {
-      if (msg.enabled) activate();
-      else removeCSS();
-    }
+    if (msg.type === "nocookie_toggle" || msg.type === "nocookie_exclusions_updated") checkAndActivate();
   });
 })();

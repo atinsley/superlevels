@@ -826,7 +826,59 @@ async function loadNoCookie() {
   const enabled = data.nocookie_enabled !== false;
   nocookieToggle.checked = enabled;
   updateNoCookieUI(enabled);
+  await loadNoCookieSites();
 }
+
+// ── Per-site exclusions (based on levelsio/superlevels#5 by mayerwin) ──
+// Stored without "www." so one entry covers example.com, www.example.com and other subdomains.
+let nocookieSite = "";
+const nocookieSiteKey = (host) => host.replace(/^www\./, "");
+
+async function loadNoCookieSites() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  nocookieSite = "";
+  try {
+    if (tab && /^https?:/.test(tab.url || "")) nocookieSite = nocookieSiteKey(new URL(tab.url).hostname);
+  } catch {}
+  const { nocookie_exclusions: list = [] } = await chrome.storage.local.get(["nocookie_exclusions"]);
+  const siteBox = document.getElementById("nocookieSite");
+  siteBox.hidden = !nocookieSite;
+  if (nocookieSite) {
+    document.getElementById("nocookieHost").textContent = nocookieSite;
+    const off = list.includes(nocookieSite);
+    document.getElementById("nocookieExcludeBtn").textContent = off ? "Dismiss here again" : "Don't dismiss here";
+    document.getElementById("nocookieSiteNote").textContent = off
+      ? "Switched off on this site."
+      : "";
+  }
+  document.getElementById("nocookieExclHeader").hidden = !list.length;
+  const listEl = document.getElementById("nocookieExclList");
+  listEl.innerHTML = list
+    .map((h) => `<div class="item"><span>${esc(h)}</span><button data-nchost="${escA(h)}" title="Dismiss on this site again">&times;</button></div>`)
+    .join("");
+  listEl.querySelectorAll("button[data-nchost]").forEach((b) =>
+    b.addEventListener("click", () => setNoCookieExcluded(b.dataset.nchost, false))
+  );
+}
+
+async function setNoCookieExcluded(site, excluded) {
+  const { nocookie_exclusions: list = [] } = await chrome.storage.local.get(["nocookie_exclusions"]);
+  const next = excluded ? [...new Set([...list, site])] : list.filter((h) => h !== site);
+  await chrome.storage.local.set({ nocookie_exclusions: next });
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab) chrome.tabs.sendMessage(tab.id, { type: "nocookie_exclusions_updated" }).catch(() => {});
+  await loadNoCookieSites();
+  if (excluded && site === nocookieSite) {
+    document.getElementById("nocookieSiteNote").textContent =
+      "Switched off on this site. Reload the page if a banner was already accepted or closed.";
+  }
+}
+
+document.getElementById("nocookieExcludeBtn").addEventListener("click", async () => {
+  if (!nocookieSite) return;
+  const { nocookie_exclusions: list = [] } = await chrome.storage.local.get(["nocookie_exclusions"]);
+  await setNoCookieExcluded(nocookieSite, !list.includes(nocookieSite));
+});
 
 function updateNoCookieUI(on) {
   nocookieStatus.textContent = on ? "ON" : "OFF";
