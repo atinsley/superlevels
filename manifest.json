@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "🚀 SuperLevels",
-  "version": "2.0",
-  "description": "The super Chrome extension by @levelsio — dark mode, GDPR cookie dismisser, YouTube unhook, tab cleaner, cookie editor, redirect tracer, live CSS editor, X/Twitter dim mode, X multi-select hide/block replies, JS toggle, JSON formatter, music recognizer, picture-in-picture, Google Maps links, view image, Photopea ad remover, TikTok login skipper, and archive.is auto-redirect for paywalled articles.",
+  "version": "2.1",
+  "description": "The super Chrome extension by @levelsio — dark mode, GDPR cookie dismisser, YouTube unhook, tab cleaner, cookie editor, redirect tracer, live CSS editor, X/Twitter dim mode, X multi-select hide/block replies, JS toggle, JSON formatter, music recognizer, picture-in-picture, focus blocker, Google Maps links, view image, Photopea ad remover, TikTok login skipper, and archive.is auto-redirect for paywalled articles.",
   "permissions": ["tabs", "storage", "alarms", "cookies", "activeTab", "webRequest", "webNavigation", "tabCapture", "contentSettings", "scripting"],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -49,5 +49,9 @@
     "16": "icon16.png",
     "48": "icon48.png",
     "128": "icon128.png"
-  }
+  },
+  "web_accessible_resources": [{
+    "resources": ["blocked.html"],
+    "matches": ["<all_urls>"]
+  }]
 }

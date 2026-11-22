@@ -366,3 +366,30 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   const clean = url.origin + url.pathname;
   chrome.tabs.update(details.tabId, { url: "https://archive.is/" + clean }).catch(() => {});
 });
+
+// ═══════════════════════════════════
+//  Focus Blocker
+// ═══════════════════════════════════
+// Cancels top-level navigation to any host on the user's blocklist
+// when focus mode is on, redirecting the tab to blocked.html.
+chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
+  if (details.frameId !== 0) return;
+  if (!/^https?:/.test(details.url)) return;
+
+  const data = await chrome.storage.local.get(["focus_enabled", "focus_sites"]);
+  if (!data.focus_enabled) return;
+  const sites = data.focus_sites || [];
+  if (!sites.length) return;
+
+  let host;
+  try { host = new URL(details.url).hostname; } catch { return; }
+
+  const hit = sites.find(
+    (s) => s.on && (host === s.host || host.endsWith("." + s.host))
+  );
+  if (!hit) return;
+
+  chrome.tabs.update(details.tabId, {
+    url: chrome.runtime.getURL("blocked.html") + "?host=" + encodeURIComponent(host),
+  });
+});
